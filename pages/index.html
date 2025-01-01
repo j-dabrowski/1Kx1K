@@ -3,151 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pixel Grid Editor</title>
-    <style>
-        body {
-            margin: 0;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #f0f0f0;
-            font-family: system-ui, -apple-system, sans-serif;
-            overflow: hidden;
-        }
-        #container {
-            position: relative;
-            display: flex;
-            gap: 20px;
-        }
-        canvas {
-            background: white;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            cursor: crosshair;
-        }
-        canvas.image-mode {
-            cursor: move;
-        }
-        #controls {
-            position: absolute;
-            left: 100%;
-            margin-left: 20px;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            width: 250px;
-        }
-        .control-section {
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #eee;
-        }
-        .control-section:last-child {
-            border-bottom: none;
-        }
-        button {
-            width: 100%;
-            padding: 10px;
-            margin: 5px 0;
-            border: none;
-            border-radius: 4px;
-            background: #2563eb;
-            color: white;
-            cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
-        }
-        button:hover {
-            background: #1d4ed8;
-        }
-        button:active {
-            transform: scale(0.98);
-        }
-        button.secondary {
-            background: #64748b;
-        }
-        button.secondary:hover {
-            background: #475569;
-        }
-        button.destructive {
-            background: #ef4444;
-        }
-        button.destructive:hover {
-            background: #dc2626;
-        }
-        #coords {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 5px 10px;
-            font-size: 14px;
-            border-radius: 0 4px 0 0;
-        }
-        .image-upload-container {
-            position: relative;
-            width: 100%;
-            height: 60px;
-            margin: 10px 0;
-            border: 2px dashed #cbd5e1;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: border-color 0.2s;
-        }
-        .image-upload-container:hover {
-            border-color: #2563eb;
-        }
-        .image-upload-container input {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            opacity: 0;
-            cursor: pointer;
-        }
-        .upload-text {
-            color: #64748b;
-            font-size: 14px;
-            pointer-events: none;
-        }
-        #image-controls {
-            display: none;
-        }
-        .instructions {
-            background: #f8fafc;
-            padding: 12px;
-            border-radius: 4px;
-            margin: 10px 0;
-            font-size: 14px;
-            color: #475569;
-        }
-        .instructions ul {
-            margin: 0;
-            padding-left: 20px;
-        }
-        .instructions li {
-            margin: 4px 0;
-        }
-        .hint {
-            font-size: 12px;
-            color: #64748b;
-            margin-top: 4px;
-        }
-    </style>
+    <link rel="stylesheet" href="/style.css">
+    <title>The Million NFT Pixel Webpage</title>
 </head>
 <body>
     <div id="container">
         <canvas id="grid" width="1000" height="1000"></canvas>
         <div id="coords">x: 0, y: 0</div>
         <div id="controls">
+
+            <div class="control-section" id="theme-section">
+                <button id="theme-toggle" class="secondary">
+                    <span id="theme-icon">🌙</span>
+                    Dark Mode
+                </button>
+            </div>
+
+            <div class="control-section" id="auth-section">
+                <input type="text" id="username" placeholder="Enter username" class="w-full p-2 border rounded mb-2">
+                <button id="auth-button">Set User</button>
+                <p class="hint">Current user: <span id="current-user">None</span></p>
+            </div>
+            
             <div class="control-section">
                 <button id="save-group">Save Selection as Group</button>
                 <p class="hint">Click and drag to select/deselect pixels</p>
             </div>
-            
+
             <div class="control-section">
                 <div class="image-upload-container">
                     <input type="file" id="image-upload" accept="image/*">
@@ -171,6 +53,8 @@
     </div>
 
     <script>
+        // Generate session ID
+        const sessionId = Math.random().toString(36).substring(2, 15);
         const canvas = document.getElementById('grid');
         const ctx = canvas.getContext('2d');
         const coords = document.getElementById('coords');
@@ -193,14 +77,12 @@
         let isDraggingImage = false;
         let dragStart = { x: 0, y: 0 };
         let initialImageState = null;
-        
+
+        // Grid drawing
         function drawGrid() {
             ctx.clearRect(0, 0, GRID_SIZE, GRID_SIZE);
-            
-            // Set global transparency if editing image
-            ctx.globalAlpha = (uploadedImage && currentGroup) ? 0.3 : 1;
 
-            // Draw base grid
+            // Base grid
             ctx.strokeStyle = '#ddd';
             ctx.lineWidth = 0.5;
             for (let i = 0; i < GRID_CELLS; i++) {
@@ -209,38 +91,64 @@
                 }
             }
 
-            // Draw groups
             groups.forEach(group => {
-                ctx.save();
+            ctx.save();
+            
+            // Draw filled pixels and image
+            ctx.beginPath();
+            group.pixels.forEach(pixel => {
+                const [x, y] = pixel.split(',');
+                ctx.rect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+            });
+            ctx.clip();
+
+            if (group.image) {
+                ctx.drawImage(group.image, group.imageX, group.imageY, 
+                            group.imageWidth, group.imageHeight);
+            }
+
+            // Only draw outline if user is logged in and owns this group
+            if (currentUser && group.userId === currentUser) {
                 ctx.beginPath();
                 group.pixels.forEach(pixel => {
-                    const [x, y] = pixel.split(',');
-                    ctx.rect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+                    const [x, y] = pixel.split(',').map(Number);
+                    const left = !group.pixels.has(`${x-1},${y}`);
+                    const right = !group.pixels.has(`${x+1},${y}`);
+                    const top = !group.pixels.has(`${x},${y-1}`);
+                    const bottom = !group.pixels.has(`${x},${y+1}`);
+
+                    ctx.strokeStyle = '#ffd700';
+                    ctx.lineWidth = 2;
+                    
+                    if (left) {
+                        ctx.moveTo(x * PIXEL_SIZE, y * PIXEL_SIZE);
+                        ctx.lineTo(x * PIXEL_SIZE, (y + 1) * PIXEL_SIZE);
+                    }
+                    if (right) {
+                        ctx.moveTo((x + 1) * PIXEL_SIZE, y * PIXEL_SIZE);
+                        ctx.lineTo((x + 1) * PIXEL_SIZE, (y + 1) * PIXEL_SIZE);
+                    }
+                    if (top) {
+                        ctx.moveTo(x * PIXEL_SIZE, y * PIXEL_SIZE);
+                        ctx.lineTo((x + 1) * PIXEL_SIZE, y * PIXEL_SIZE);
+                    }
+                    if (bottom) {
+                        ctx.moveTo(x * PIXEL_SIZE, (y + 1) * PIXEL_SIZE);
+                        ctx.lineTo((x + 1) * PIXEL_SIZE, (y + 1) * PIXEL_SIZE);
+                    }
                 });
-                ctx.clip();
+                ctx.stroke();
+            }
+            ctx.restore();
+        });
 
-                if (group.image && group !== currentGroup) {
-                    ctx.drawImage(group.image, group.imageX, group.imageY, 
-                                group.imageWidth, group.imageHeight);
-                }
-
-                ctx.strokeStyle = '#ffd700';
-                ctx.lineWidth = 2;
-                group.pixels.forEach(pixel => {
-                    const [x, y] = pixel.split(',');
-                    ctx.strokeRect(x * PIXEL_SIZE, y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
-                });
-                ctx.restore();
-            });
-
+            // Add this block to drawGrid function after drawing groups but before drawing selection
             // Draw currently edited image if exists
             if (uploadedImage && currentGroup) {
-                // Draw full image with lower opacity
                 ctx.globalAlpha = 0.4;
                 ctx.drawImage(uploadedImage, imageState.x, imageState.y, 
                             imageState.width, imageState.height);
                             
-                // Draw clipped image at full opacity
                 ctx.globalAlpha = 1;
                 ctx.save();
                 ctx.beginPath();
@@ -254,9 +162,6 @@
                 ctx.restore();
             }
 
-            // Reset global alpha for selections
-            ctx.globalAlpha = 1;
-            
             // Draw current selection
             ctx.fillStyle = 'rgba(0, 120, 255, 0.3)';
             ctx.strokeStyle = '#0066cc';
@@ -314,18 +219,6 @@
             };
         }
 
-        window.saveImageToServer = async function(imageData, groupId) {
-        const response = await fetch('/api/save-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                imageData: imageData,  // Base64 PNG data
-                groupId: groupId 
-            })
-        });
-        return await response.text(); // URL to saved image
-        }
-
         function setImageMode(enabled) {
             if (enabled) {
                 canvas.classList.add('image-mode');
@@ -335,6 +228,92 @@
                 imageControls.style.display = 'none';
             }
         }
+
+        async function saveGroup(group) {
+            if (!currentUser) {
+                alert('Please set a username first');
+                return;
+            }
+   
+            const groupData = {
+                sessionId,
+                userId: currentUser,
+                pixels: Array.from(group.pixels),
+                image: group.image ? {
+                    url: group.image.src,
+                    x: group.imageX,
+                    y: group.imageY,
+                    width: group.imageWidth,
+                    height: group.imageHeight
+                } : null
+            };
+
+            try {
+                const response = await fetch('/api/save-group', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(groupData)
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('Error saving group:', error);
+            }
+        }
+
+        async function loadGroups() {
+            try {
+                const response = await fetch('/api/load-all-groups');
+                const allGroupsData = await response.json();
+                
+                for (const [storedSessionId, groupsData] of Object.entries(allGroupsData)) {
+                    for (const groupData of groupsData) {
+                        const group = {
+                            userId: groupData.userId,  // Add this line
+                            pixels: new Set(groupData.pixels),
+                            imageX: groupData.image?.x || 0,
+                            imageY: groupData.image?.y || 0,
+                            imageWidth: groupData.image?.width || 0,
+                            imageHeight: groupData.image?.height || 0
+                        };
+                        if (groupData.image) {
+                            const img = new Image();
+                            img.onload = () => {
+                                group.image = img;
+                                drawGrid();
+                            };
+                            img.src = groupData.image.url;
+                        }
+                        groups.push(group);
+                    }
+                }
+                drawGrid();
+            } catch (error) {
+                console.error('Error loading groups:', error);
+            }
+        }
+
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeIcon = document.getElementById('theme-icon');
+        
+        themeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            themeIcon.textContent = document.body.classList.contains('dark-mode') ? '☀️' : '🌙';
+        });
+
+        let currentUser = null;
+        const userDisplay = document.getElementById('current-user');
+        const usernameInput = document.getElementById('username');
+        const authButton = document.getElementById('auth-button');
+
+        authButton.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            if (username) {
+                currentUser = username;
+                userDisplay.textContent = username;
+                usernameInput.value = '';
+                drawGrid();  // Redraw to update highlights
+            }
+        });
 
         canvas.addEventListener('mousedown', (e) => {
             const [x, y] = getGridPosition(e);
@@ -411,9 +390,12 @@
             }
         });
 
-        saveGroupBtn.addEventListener('click', () => {
+
+        // Update saveGroupBtn click handler
+        saveGroupBtn.addEventListener('click', async () => {
             if (selectedPixels.size > 0) {
                 const newGroup = {
+                    userId: currentUser,
                     pixels: new Set(selectedPixels),
                     image: null,
                     imageX: 0,
@@ -421,6 +403,7 @@
                     imageWidth: 0,
                     imageHeight: 0
                 };
+                await saveGroup(newGroup);
                 groups.push(newGroup);
                 selectedPixels.clear();
                 drawGrid();
@@ -446,81 +429,82 @@
             }
         });
 
-        saveImageBtn.addEventListener('click', () => {
-            if (currentGroup && uploadedImage) {
-                // Find bounds of pixel group
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                currentGroup.pixels.forEach(pixel => {
-                    const [x, y] = pixel.split(',').map(Number);
-                    minX = Math.min(minX, x * PIXEL_SIZE);
-                    minY = Math.min(minY, y * PIXEL_SIZE);
-                    maxX = Math.max(maxX, (x + 1) * PIXEL_SIZE);
-                    maxY = Math.max(maxY, (y + 1) * PIXEL_SIZE);
-                });
-
-                const width = maxX - minX;
-                const height = maxY - minY;
-
-                const cropCanvas = document.createElement('canvas');
-                cropCanvas.width = width;
-                cropCanvas.height = height;
-                const cropCtx = cropCanvas.getContext('2d');
-
-                cropCtx.clearRect(0, 0, width, height);
-                
-                cropCtx.beginPath();
-                currentGroup.pixels.forEach(pixel => {
-                    const [x, y] = pixel.split(',').map(Number);
-                    cropCtx.rect((x * PIXEL_SIZE) - minX, (y * PIXEL_SIZE) - minY, PIXEL_SIZE, PIXEL_SIZE);
-                });
-                cropCtx.clip();
-
-                cropCtx.drawImage(uploadedImage, 
-                    imageState.x - minX, imageState.y - minY,
-                    imageState.width, imageState.height);
-
-                // Get base64 image data
-                const imageData = cropCanvas.toDataURL('image/png');
-                
-                // Call external save function if it exists
-                if (window.saveImageToServer) {
-                    window.saveImageToServer(imageData, currentGroup.id).then(savedImageUrl => {
-                        const croppedImage = new Image();
-                        croppedImage.onload = () => {
-                            currentGroup.image = croppedImage;
-                            currentGroup.imageX = minX;
-                            currentGroup.imageY = minY;
-                            currentGroup.imageWidth = width;
-                            currentGroup.imageHeight = height;
-                            
-                            currentGroup = null;
-                            uploadedImage = null;
-                            setImageMode(false);
-                            imageUpload.value = '';
-                            drawGrid();
-                        };
-                        croppedImage.src = savedImageUrl;
-                    });
-                } else {
-                    // Fallback to local handling
-                    const croppedImage = new Image();
-                    croppedImage.onload = () => {
-                        currentGroup.image = croppedImage;
-                        currentGroup.imageX = minX;
-                        currentGroup.imageY = minY;
-                        currentGroup.imageWidth = width;
-                        currentGroup.imageHeight = height;
-                        
-                        currentGroup = null;
-                        uploadedImage = null;
-                        setImageMode(false);
-                        imageUpload.value = '';
-                        drawGrid();
-                    };
-                    croppedImage.src = imageData;
-                }
-            }
+        saveImageBtn.addEventListener('click', async () => {
+    if (currentGroup && uploadedImage) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        currentGroup.pixels.forEach(pixel => {
+            const [x, y] = pixel.split(',').map(Number);
+            minX = Math.min(minX, x * PIXEL_SIZE);
+            minY = Math.min(minY, y * PIXEL_SIZE);
+            maxX = Math.max(maxX, (x + 1) * PIXEL_SIZE);
+            maxY = Math.max(maxY, (y + 1) * PIXEL_SIZE);
         });
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = width;
+        cropCanvas.height = height;
+        const cropCtx = cropCanvas.getContext('2d');
+
+        cropCtx.clearRect(0, 0, width, height);
+        cropCtx.beginPath();
+        currentGroup.pixels.forEach(pixel => {
+            const [x, y] = pixel.split(',').map(Number);
+            cropCtx.rect((x * PIXEL_SIZE) - minX, (y * PIXEL_SIZE) - minY, PIXEL_SIZE, PIXEL_SIZE);
+        });
+        cropCtx.clip();
+
+        cropCtx.drawImage(uploadedImage, 
+            imageState.x - minX, imageState.y - minY,
+            imageState.width, imageState.height);
+
+        const imageData = cropCanvas.toDataURL('image/png');
+        
+        try {
+            const response = await fetch('/api/save-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageData: imageData,
+                    groupId: currentGroup.id || Date.now()
+                })
+            });
+            
+            const savedImageUrl = await response.text();
+            const croppedImage = new Image();
+            
+            croppedImage.onload = async () => {
+                const updatedGroup = {
+                    pixels: currentGroup.pixels,
+                    image: croppedImage,
+                    imageX: minX,
+                    imageY: minY,
+                    imageWidth: width,
+                    imageHeight: height
+                };
+
+                // Replace the current group with updated version
+                const groupIndex = groups.indexOf(currentGroup);
+                if (groupIndex !== -1) {
+                    groups[groupIndex] = updatedGroup;
+                }
+                
+                await saveGroup(updatedGroup);
+                currentGroup = null;
+                uploadedImage = null;
+                setImageMode(false);
+                imageUpload.value = '';
+                drawGrid();
+            };
+            
+            croppedImage.src = savedImageUrl;
+        } catch (error) {
+            console.error('Error saving image:', error);
+        }
+    }
+});
 
         cancelImageBtn.addEventListener('click', () => {
             currentGroup = null;
@@ -529,6 +513,8 @@
             imageUpload.value = '';
             drawGrid();
         });
+
+        loadGroups();
 
         drawGrid();
     </script>

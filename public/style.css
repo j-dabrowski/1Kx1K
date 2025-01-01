@@ -1,0 +1,174 @@
+body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #f0f0f0;
+    font-family: system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+}
+#container {
+    position: relative;
+    display: flex;
+    gap: 20px;
+}
+canvas {
+    background: white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    cursor: crosshair;
+}
+canvas.image-mode {
+    cursor: move;
+}
+#controls {
+    position: absolute;
+    left: 100%;
+    margin-left: 20px;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    width: 250px;
+}
+.control-section {
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+.control-section:last-child {
+    border-bottom: none;
+}
+button {
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0;
+    border: none;
+    border-radius: 4px;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+button:hover {
+    background: #1d4ed8;
+}
+button:active {
+    transform: scale(0.98);
+}
+button.secondary {
+    background: #64748b;
+}
+button.secondary:hover {
+    background: #475569;
+}
+button.destructive {
+    background: #ef4444;
+}
+button.destructive:hover {
+    background: #dc2626;
+}
+#coords {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 5px 10px;
+    font-size: 14px;
+    border-radius: 0 4px 0 0;
+}
+.image-upload-container {
+    position: relative;
+    width: 100%;
+    height: 60px;
+    margin: 10px 0;
+    border: 2px dashed #cbd5e1;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.image-upload-container:hover {
+    border-color: #2563eb;
+}
+.image-upload-container input {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+.upload-text {
+    color: #64748b;
+    font-size: 14px;
+    pointer-events: none;
+}
+#image-controls {
+    display: none;
+}
+.instructions {
+    background: #f8fafc;
+    padding: 12px;
+    border-radius: 4px;
+    margin: 10px 0;
+    font-size: 14px;
+    color: #475569;
+}
+.instructions ul {
+    margin: 0;
+    padding-left: 20px;
+}
+.instructions li {
+    margin: 4px 0;
+}
+.hint {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 4px;
+}
+input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+body.dark-mode {
+    background: #1a1a1a;
+}
+
+body.dark-mode #controls {
+    background: #2d2d2d;
+    color: #fff;
+}
+
+body.dark-mode canvas {
+    background: #333;
+}
+
+body.dark-mode .hint {
+    color: #aaa;
+}
+
+body.dark-mode input[type="text"] {
+    background: #333;
+    color: #fff;
+    border-color: #444;
+}
+
+body.dark-mode .instructions {
+    background: #333;
+    color: #ddd;
+}
+
+body.dark-mode .image-upload-container {
+    border-color: #444;
+}
+
+body.dark-mode .upload-text {
+    color: #aaa;
+}
