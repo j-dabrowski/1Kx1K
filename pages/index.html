@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Pixel Groups</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            cursor: pointer;
+            max-width: 100%;
+            height: auto;
+        }
+        .controls {
+            margin: 10px 0;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #imageControls {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .instructions {
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="pixelCanvas"></canvas>
+    <div class="controls">
+        <button id="confirmGroup">Confirm Group</button>
+        <input type="file" id="uploadImage" accept="image/*" />
+        <button id="clearSelection">Clear Selection</button>
+    </div>
+    <div id="imageControls">
+        <div class="instructions">
+            <p>• Click or drag to select/deselect pixels</p>
+            <p>• Drag to move the image when editing</p>
+            <p>• Use mouse wheel to resize the image</p>
+        </div>
+        <div class="controls">
+            <button id="saveImage">Save Image to Group</button>
+            <button id="cancelImage">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('pixelCanvas');
+        const ctx = canvas.getContext('2d');
+        const confirmButton = document.getElementById('confirmGroup');
+        const uploadInput = document.getElementById('uploadImage');
+        const imageControls = document.getElementById('imageControls');
+        const saveButton = document.getElementById('saveImage');
+        const cancelButton = document.getElementById('cancelImage');
+        const clearButton = document.getElementById('clearSelection');
+
+        const canvasSize = Math.min(800, window.innerWidth - 40);
+        const pixelSize = 10;
+        const cols = Math.floor(canvasSize / pixelSize);
+        const rows = Math.floor(canvasSize / pixelSize);
+        
+        canvas.width = cols * pixelSize;
+        canvas.height = rows * pixelSize;
+
+        const pixels = [];
+        const selectedPixels = [];
+        const groups = [];
+
+        let currentGroup = null;
+        let uploadedImage = null;
+        let imageX = 0, imageY = 0, imageWidth = 0, imageHeight = 0;
+        let isDragging = false;
+        let isSelecting = false;
+        let dragStartX = 0, dragStartY = 0;
+        let lastSelectedPixel = null;
+        let selectionMode = null; // 'select' or 'deselect'
+
+        // Initialize pixels
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                pixels.push({
+                    x: col * pixelSize,
+                    y: row * pixelSize,
+                    width: pixelSize,
+                    height: pixelSize,
+                    group: null
+                });
+            }
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw base grid
+            pixels.forEach(pixel => {
+                ctx.strokeStyle = '#ddd';
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(pixel.x, pixel.y, pixel.width, pixel.height);
+            });
+
+            // Draw groups with their images or colors
+            groups.forEach(group => {
+                ctx.save();
+                // Create clipping path for the group
+                ctx.beginPath();
+                group.pixels.forEach(p => {
+                    ctx.rect(p.x, p.y, p.width, p.height);
+                });
+                ctx.clip();
+
+                // Draw image if exists
+                if (group.image) {
+                    if (group === currentGroup && uploadedImage) {
+                        ctx.drawImage(uploadedImage, imageX, imageY, imageWidth, imageHeight);
+                    } else {
+                        ctx.drawImage(group.image, group.imageX, group.imageY, group.imageWidth, group.imageHeight);
+                    }
+                }
+
+                // Draw group border
+                ctx.strokeStyle = group.color;
+                ctx.lineWidth = 2;
+                group.pixels.forEach(p => {
+                    ctx.strokeRect(p.x, p.y, p.width, p.height);
+                });
+                ctx.restore();
+            });
+
+            // Draw current selection
+            selectedPixels.forEach(pixel => {
+                ctx.fillStyle = 'rgba(0, 128, 255, 0.3)';
+                ctx.fillRect(pixel.x, pixel.y, pixel.width, pixel.height);
+                ctx.strokeStyle = '#0066cc';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(pixel.x, pixel.y, pixel.width, pixel.height);
+            });
+        }
+
+        function getCanvasMousePosition(event) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (event.clientX - rect.left) * scaleX,
+                y: (event.clientY - rect.top) * scaleY
+            };
+        }
+
+        function handlePixelSelection(pixel) {
+            if (!pixel || pixel.group || currentGroup) return;
+
+            if (selectionMode === null) {
+                // First pixel in drag determines if we're selecting or deselecting
+                selectionMode = selectedPixels.includes(pixel) ? 'deselect' : 'select';
+            }
+
+            if (selectionMode === 'select' && !selectedPixels.includes(pixel)) {
+                selectedPixels.push(pixel);
+                drawGrid();
+            } else if (selectionMode === 'deselect' && selectedPixels.includes(pixel)) {
+                const index = selectedPixels.indexOf(pixel);
+                selectedPixels.splice(index, 1);
+                drawGrid();
+            }
+        }
+
+        function getPixelAtPosition(pos) {
+            return pixels.find(pixel => 
+                pos.x >= pixel.x && pos.x < pixel.x + pixel.width &&
+                pos.y >= pixel.y && pos.y < pixel.y + pixel.height
+            );
+        }
+
+        canvas.addEventListener('mousedown', (event) => {
+            const pos = getCanvasMousePosition(event);
+            
+            if (uploadedImage && currentGroup) {
+                isDragging = true;
+                dragStartX = pos.x - imageX;
+                dragStartY = pos.y - imageY;
+            } else {
+                isSelecting = true;
+                selectionMode = null;
+                const pixel = getPixelAtPosition(pos);
+                handlePixelSelection(pixel);
+                lastSelectedPixel = pixel;
+            }
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            const pos = getCanvasMousePosition(event);
+
+            if (isDragging && uploadedImage) {
+                imageX = pos.x - dragStartX;
+                imageY = pos.y - dragStartY;
+                drawGrid();
+            } else if (isSelecting) {
+                const pixel = getPixelAtPosition(pos);
+                if (pixel && pixel !== lastSelectedPixel) {
+                    handlePixelSelection(pixel);
+                    lastSelectedPixel = pixel;
+                }
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            isSelecting = false;
+            selectionMode = null;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+            isSelecting = false;
+            selectionMode = null;
+        });
+
+        canvas.addEventListener('wheel', (event) => {
+            if (uploadedImage) {
+                event.preventDefault();
+                const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1;
+                
+                const centerX = imageX + imageWidth / 2;
+                const centerY = imageY + imageHeight / 2;
+                
+                imageWidth *= scaleFactor;
+                imageHeight *= scaleFactor;
+                
+                imageX = centerX - imageWidth / 2;
+                imageY = centerY - imageHeight / 2;
+                
+                drawGrid();
+            }
+        });
+
+        confirmButton.addEventListener('click', () => {
+            if (selectedPixels.length > 0) {
+                const newGroup = {
+                    pixels: [...selectedPixels],
+                    color: getRandomColor(),
+                    image: null,
+                    imageX: 0,
+                    imageY: 0,
+                    imageWidth: 0,
+                    imageHeight: 0
+                };
+
+                groups.push(newGroup);
+                selectedPixels.forEach(pixel => {
+                    pixel.group = newGroup;
+                });
+                selectedPixels.length = 0;
+                drawGrid();
+            }
+        });
+
+        clearButton.addEventListener('click', () => {
+            selectedPixels.length = 0;
+            drawGrid();
+        });
+
+        uploadInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file && groups.length > 0) {
+                const img = new Image();
+                img.onload = () => {
+                    uploadedImage = img;
+                    currentGroup = groups[groups.length - 1];
+                    
+                    // Calculate initial image position and size to fit the group
+                    const groupBounds = currentGroup.pixels.reduce((bounds, pixel) => {
+                        bounds.minX = Math.min(bounds.minX, pixel.x);
+                        bounds.minY = Math.min(bounds.minY, pixel.y);
+                        bounds.maxX = Math.max(bounds.maxX, pixel.x + pixel.width);
+                        bounds.maxY = Math.max(bounds.maxY, pixel.y + pixel.height);
+                        return bounds;
+                    }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+                    const groupWidth = groupBounds.maxX - groupBounds.minX;
+                    const groupHeight = groupBounds.maxY - groupBounds.minY;
+                    
+                    const imgAspect = img.width / img.height;
+                    const groupAspect = groupWidth / groupHeight;
+                    
+                    if (imgAspect > groupAspect) {
+                        imageWidth = groupWidth;
+                        imageHeight = groupWidth / imgAspect;
+                    } else {
+                        imageHeight = groupHeight;
+                        imageWidth = groupHeight * imgAspect;
+                    }
+
+                    imageX = groupBounds.minX + (groupWidth - imageWidth) / 2;
+                    imageY = groupBounds.minY + (groupHeight - imageHeight) / 2;
+
+                    imageControls.style.display = 'flex';
+                    drawGrid();
+                };
+                img.src = URL.createObjectURL(file);
+            }
+        });
+
+        saveButton.addEventListener('click', () => {
+            if (currentGroup && uploadedImage) {
+                currentGroup.image = uploadedImage;
+                currentGroup.imageX = imageX;
+                currentGroup.imageY = imageY;
+                currentGroup.imageWidth = imageWidth;
+                currentGroup.imageHeight = imageHeight;
+                
+                currentGroup = null;
+                uploadedImage = null;
+                imageControls.style.display = 'none';
+                uploadInput.value = '';
+                drawGrid();
+            }
+        });
+
+        cancelButton.addEventListener('click', () => {
+            currentGroup = null;
+            uploadedImage = null;
+            imageControls.style.display = 'none';
+            uploadInput.value = '';
+            drawGrid();
+        });
+
+        drawGrid();
+    </script>
+</body>
+</html>
