@@ -27,7 +27,7 @@
             
             <div class="control-section">
                 <button id="save-group">Save Selection as Group</button>
-                <p class="hint">Click and drag to select/deselect pixels</p>
+                <p class="hint" id="selection-hint">Click and drag to select/deselect pixels</p>
             </div>
 
             <div class="control-section">
@@ -77,6 +77,19 @@
         let isDraggingImage = false;
         let dragStart = { x: 0, y: 0 };
         let initialImageState = null;
+        let mouseX = 0, mouseY = 0;
+
+        // Add these state variables
+        let editingGroup = null;
+        let isEditingPixels = false;
+        let isEditingGroup = false;
+
+        // Add hover effect detection
+        function getGroupAtPosition(x, y) {
+            return groups.find(group => 
+                group.pixels.has(`${x},${y}`)
+            );
+        }
 
         // Grid drawing
         function drawGrid() {
@@ -93,8 +106,6 @@
 
             groups.forEach(group => {
             ctx.save();
-            
-            // Draw filled pixels and image
             ctx.beginPath();
             group.pixels.forEach(pixel => {
                 const [x, y] = pixel.split(',');
@@ -109,6 +120,10 @@
 
             // Only draw outline if user is logged in and owns this group
             if (currentUser && group.userId === currentUser) {
+                // Check if mouse is over this group
+                const [hx, hy] = getGridPosition({ clientX: mouseX, clientY: mouseY });
+                const isHovered = group.pixels.has(`${hx},${hy}`);
+
                 ctx.beginPath();
                 group.pixels.forEach(pixel => {
                     const [x, y] = pixel.split(',').map(Number);
@@ -117,7 +132,7 @@
                     const top = !group.pixels.has(`${x},${y-1}`);
                     const bottom = !group.pixels.has(`${x},${y+1}`);
 
-                    ctx.strokeStyle = '#ffd700';
+                    ctx.strokeStyle = isHovered ? '#22c55e' : '#ffd700';  // Green if hovered, yellow if not
                     ctx.lineWidth = 2;
                     
                     if (left) {
@@ -141,6 +156,8 @@
             }
             ctx.restore();
         });
+                            
+
 
             // Add this block to drawGrid function after drawing groups but before drawing selection
             // Draw currently edited image if exists
@@ -219,6 +236,88 @@
             };
         }
 
+        function showEditControls() {
+            isEditingGroup = true;
+            const editControls = document.createElement('div');
+            editControls.id = 'edit-controls';
+            editControls.className = 'control-section';
+            editControls.innerHTML = `
+                <button id="save-edits">Save Pixel Changes</button>
+                <p class="hint">Edit the pixels in your group</p>
+                <div class="image-upload-container">
+                    <input type="file" id="edit-image-upload" accept="image/*">
+                    <span class="upload-text">Optional: Click to upload image</span>
+                </div>
+                <button id="cancel-edits" class="secondary">Cancel</button>
+            `;
+            
+            document.getElementById('controls').appendChild(editControls);
+            
+            // Hide the regular group creation controls while editing
+            document.getElementById('save-group').style.display = 'none';
+            document.querySelector('.control-section .image-upload-container').style.display = 'none';
+            
+            // Add event listener for the edit-specific image upload
+            document.getElementById('edit-image-upload').addEventListener('change', handleEditImageUpload);
+            
+            document.getElementById('save-edits').onclick = async () => {
+                // Update the existing group's pixels
+                editingGroup.pixels = new Set(selectedPixels);
+                
+                // Save and update the same group
+                await saveGroup(editingGroup);
+                
+                // No need to push to groups array as saveGroup handles this
+                finishEditing();
+            };
+            
+            document.getElementById('cancel-edits').onclick = finishEditing;
+        }
+
+        function handleEditImageUpload(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const img = new Image();
+                img.onload = () => {
+                    uploadedImage = img;
+                    currentGroup = editingGroup;
+                    
+                    const initialState = calculateInitialImagePosition(currentGroup);
+                    imageState = { ...initialState };
+                    initialImageState = { ...initialState };
+
+                    // Hide edit controls, show image editing controls
+                    document.getElementById('edit-controls').style.display = 'none';
+                    setImageMode(true);
+                    document.getElementById('image-controls').style.display = 'block';
+                    drawGrid();
+                };
+                img.src = URL.createObjectURL(file);
+            }
+        }
+
+        function finishEditing() {
+            isEditingGroup = false;
+            isEditingPixels = false;
+            editingGroup = null;
+            currentGroup = null;
+            uploadedImage = null;
+            selectedPixels.clear();
+            
+            // Restore default UI state
+            document.getElementById('save-group').style.display = 'block';
+            document.querySelector('.image-upload-container').style.display = 'block';
+            document.getElementById('image-controls').style.display = 'none';
+            
+            if (document.getElementById('edit-controls')) {
+                document.getElementById('edit-controls').remove();
+            }
+            
+            setImageMode(false);
+            if (imageUpload) imageUpload.value = '';
+            drawGrid();
+        }
+
         function setImageMode(enabled) {
             if (enabled) {
                 canvas.classList.add('image-mode');
@@ -234,8 +333,14 @@
                 alert('Please set a username first');
                 return;
             }
-   
+    
+            // Ensure the group has an ID and it's maintained across updates
+            if (!group.id) {
+                group.id = Date.now().toString();
+            }
+            
             const groupData = {
+                id: group.id,
                 sessionId,
                 userId: currentUser,
                 pixels: Array.from(group.pixels),
@@ -254,7 +359,18 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(groupData)
                 });
-                return await response.json();
+                
+                const result = await response.json();
+                
+                // Update in-memory groups array
+                const existingIndex = groups.findIndex(g => g.id === group.id);
+                if (existingIndex !== -1) {
+                    groups[existingIndex] = group;
+                } else {
+                    groups.push(group);
+                }
+                
+                return result;
             } catch (error) {
                 console.error('Error saving group:', error);
             }
@@ -268,7 +384,8 @@
                 for (const [storedSessionId, groupsData] of Object.entries(allGroupsData)) {
                     for (const groupData of groupsData) {
                         const group = {
-                            userId: groupData.userId,  // Add this line
+                            id: groupData.id,  // Add this line
+                            userId: groupData.userId,
                             pixels: new Set(groupData.pixels),
                             imageX: groupData.image?.x || 0,
                             imageY: groupData.image?.y || 0,
@@ -294,7 +411,7 @@
 
         const themeToggle = document.getElementById('theme-toggle');
         const themeIcon = document.getElementById('theme-icon');
-        
+
         themeToggle.addEventListener('click', () => {
             document.body.classList.toggle('dark-mode');
             themeIcon.textContent = document.body.classList.contains('dark-mode') ? '☀️' : '🌙';
@@ -315,16 +432,31 @@
             }
         });
 
+
         canvas.addEventListener('mousedown', (e) => {
             const [x, y] = getGridPosition(e);
             
+            if (!isEditingPixels) {
+                const clickedGroup = getGroupAtPosition(x, y);
+                if (clickedGroup && clickedGroup.userId === currentUser) {
+                    editingGroup = clickedGroup;
+                    isEditingPixels = true;
+                    selectedPixels = new Set(clickedGroup.pixels); // Copy existing pixels to selection
+                    showEditControls();
+                    drawGrid();
+                    return;
+                }
+            }
+
             if (uploadedImage && currentGroup) {
                 isDraggingImage = true;
                 dragStart = {
                     x: e.clientX - imageState.x,
                     y: e.clientY - imageState.y
                 };
-            } else if (!isPixelInGroup(x, y)) {
+            } else if (isEditingPixels || !isPixelInGroup(x, y) || 
+                    (isPixelInGroup(x, y) && editingGroup?.pixels.has(`${x},${y}`))) {
+                // Allow selection/deselection of pixels in editing mode
                 isDrawing = true;
                 const pixel = `${x},${y}`;
                 selectionMode = selectedPixels.has(pixel) ? 'deselect' : 'select';
@@ -338,13 +470,14 @@
         });
 
         canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
             const [x, y] = getGridPosition(e);
             coords.textContent = `x: ${x}, y: ${y}`;
 
             if (isDraggingImage) {
                 imageState.x = e.clientX - dragStart.x;
                 imageState.y = e.clientY - dragStart.y;
-                drawGrid();
             } else if (isDrawing && !isPixelInGroup(x, y)) {
                 const pixel = `${x},${y}`;
                 if (selectionMode === 'deselect') {
@@ -352,8 +485,8 @@
                 } else {
                     selectedPixels.add(pixel);
                 }
-                drawGrid();
             }
+            drawGrid(); // Call drawGrid on every mousemove to update hover effect
         });
 
         canvas.addEventListener('mouseup', () => {
@@ -390,11 +523,15 @@
             }
         });
 
-
-        // Update saveGroupBtn click handler
         saveGroupBtn.addEventListener('click', async () => {
+            if (isEditingGroup) {
+                alert('Please save or cancel your current edits first');
+                return;
+            }
+
             if (selectedPixels.size > 0) {
                 const newGroup = {
+                    id: Date.now().toString(), // Ensure unique ID
                     userId: currentUser,
                     pixels: new Set(selectedPixels),
                     image: null,
@@ -404,25 +541,44 @@
                     imageHeight: 0
                 };
                 await saveGroup(newGroup);
-                groups.push(newGroup);
                 selectedPixels.clear();
                 drawGrid();
             }
         });
 
         imageUpload.addEventListener('change', (e) => {
+            if (!currentUser) {
+                alert('Please sign in first');
+                imageUpload.value = '';
+                return;
+            }
+
+            const targetGroup = editingGroup || groups[groups.length - 1];
+
+            if (!targetGroup || targetGroup.userId !== currentUser) {
+                alert('Please select one of your groups first');
+                imageUpload.value = '';
+                return;
+            }
+
             const file = e.target.files[0];
-            if (file && groups.length > 0) {
+            if (file) {
                 const img = new Image();
                 img.onload = () => {
                     uploadedImage = img;
-                    currentGroup = groups[groups.length - 1];
+                    currentGroup = targetGroup;
                     
                     const initialState = calculateInitialImagePosition(currentGroup);
                     imageState = { ...initialState };
                     initialImageState = { ...initialState };
 
+                    // Hide pixel editing controls and image upload, show only image editing controls
+                    document.querySelector('.image-upload-container').style.display = 'none';
+                    if (document.getElementById('edit-controls')) {
+                        document.getElementById('edit-controls').style.display = 'none';
+                    }
                     setImageMode(true);
+                    document.getElementById('image-controls').style.display = 'block';
                     drawGrid();
                 };
                 img.src = URL.createObjectURL(file);
@@ -430,81 +586,105 @@
         });
 
         saveImageBtn.addEventListener('click', async () => {
-    if (currentGroup && uploadedImage) {
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        currentGroup.pixels.forEach(pixel => {
-            const [x, y] = pixel.split(',').map(Number);
-            minX = Math.min(minX, x * PIXEL_SIZE);
-            minY = Math.min(minY, y * PIXEL_SIZE);
-            maxX = Math.max(maxX, (x + 1) * PIXEL_SIZE);
-            maxY = Math.max(maxY, (y + 1) * PIXEL_SIZE);
-        });
-
-        const width = maxX - minX;
-        const height = maxY - minY;
-
-        const cropCanvas = document.createElement('canvas');
-        cropCanvas.width = width;
-        cropCanvas.height = height;
-        const cropCtx = cropCanvas.getContext('2d');
-
-        cropCtx.clearRect(0, 0, width, height);
-        cropCtx.beginPath();
-        currentGroup.pixels.forEach(pixel => {
-            const [x, y] = pixel.split(',').map(Number);
-            cropCtx.rect((x * PIXEL_SIZE) - minX, (y * PIXEL_SIZE) - minY, PIXEL_SIZE, PIXEL_SIZE);
-        });
-        cropCtx.clip();
-
-        cropCtx.drawImage(uploadedImage, 
-            imageState.x - minX, imageState.y - minY,
-            imageState.width, imageState.height);
-
-        const imageData = cropCanvas.toDataURL('image/png');
-        
-        try {
-            const response = await fetch('/api/save-image', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    imageData: imageData,
-                    groupId: currentGroup.id || Date.now()
-                })
-            });
+            if (!currentUser) {
+                alert('Please sign in first');
+                return;
+            }
+            if (!currentGroup || currentGroup.userId !== currentUser) {
+                alert('You can only save images to groups you own');
+                return;
+            }
             
-            const savedImageUrl = await response.text();
-            const croppedImage = new Image();
-            
-            croppedImage.onload = async () => {
-                const updatedGroup = {
-                    pixels: currentGroup.pixels,
-                    image: croppedImage,
-                    imageX: minX,
-                    imageY: minY,
-                    imageWidth: width,
-                    imageHeight: height
-                };
+            if (currentGroup && uploadedImage) {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                currentGroup.pixels.forEach(pixel => {
+                    const [x, y] = pixel.split(',').map(Number);
+                    minX = Math.min(minX, x * PIXEL_SIZE);
+                    minY = Math.min(minY, y * PIXEL_SIZE);
+                    maxX = Math.max(maxX, (x + 1) * PIXEL_SIZE);
+                    maxY = Math.max(maxY, (y + 1) * PIXEL_SIZE);
+                });
 
-                // Replace the current group with updated version
-                const groupIndex = groups.indexOf(currentGroup);
-                if (groupIndex !== -1) {
-                    groups[groupIndex] = updatedGroup;
-                }
+                const width = maxX - minX;
+                const height = maxY - minY;
+
+                const cropCanvas = document.createElement('canvas');
+                cropCanvas.width = width;
+                cropCanvas.height = height;
+                const cropCtx = cropCanvas.getContext('2d');
+
+                cropCtx.clearRect(0, 0, width, height);
+                cropCtx.beginPath();
+                currentGroup.pixels.forEach(pixel => {
+                    const [x, y] = pixel.split(',').map(Number);
+                    cropCtx.rect((x * PIXEL_SIZE) - minX, (y * PIXEL_SIZE) - minY, PIXEL_SIZE, PIXEL_SIZE);
+                });
+                cropCtx.clip();
+
+                cropCtx.drawImage(uploadedImage, 
+                    imageState.x - minX, imageState.y - minY,
+                    imageState.width, imageState.height);
+
+                const imageData = cropCanvas.toDataURL('image/png');
                 
-                await saveGroup(updatedGroup);
-                currentGroup = null;
-                uploadedImage = null;
-                setImageMode(false);
-                imageUpload.value = '';
-                drawGrid();
-            };
-            
-            croppedImage.src = savedImageUrl;
-        } catch (error) {
-            console.error('Error saving image:', error);
-        }
-    }
-});
+                try {
+                    const response = await fetch('/api/save-image', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            imageData: imageData,
+                            groupId: currentGroup.id || Date.now()
+                        })
+                    });
+                    
+                    const savedImageUrl = await response.text();
+                    const croppedImage = new Image();
+                    
+                    croppedImage.onload = async () => {
+                        // Update the group in memory
+                        const groupIndex = groups.findIndex(g => g === currentGroup);
+                        if (groupIndex !== -1) {
+                            // Create updated version of the group
+                            const updatedGroup = {
+                                ...currentGroup,
+                                image: croppedImage,
+                                imageX: minX,
+                                imageY: minY,
+                                imageWidth: width,
+                                imageHeight: height
+                            };
+                            
+                            // Update both the groups array and save to JSON
+                            groups[groupIndex] = updatedGroup;
+                            await saveGroup(updatedGroup);
+                        }
+                        
+                        // Complete the edit process (keep your existing cleanup code)
+                        isEditingGroup = false;
+                        isEditingPixels = false;
+                        editingGroup = null;
+                        currentGroup = null;
+                        uploadedImage = null;
+                        selectedPixels.clear();
+                        
+                        // Restore UI elements (keep your existing UI cleanup)
+                        document.getElementById('save-group').style.display = 'block';
+                        document.querySelector('.image-upload-container').style.display = 'block';
+                        if (document.getElementById('edit-controls')) {
+                            document.getElementById('edit-controls').remove();
+                        }
+                        
+                        setImageMode(false);
+                        imageUpload.value = '';
+                        drawGrid();
+                    };
+                    
+                    croppedImage.src = savedImageUrl;
+                } catch (error) {
+                    console.error('Error saving image:', error);
+                }
+            }
+        });
 
         cancelImageBtn.addEventListener('click', () => {
             currentGroup = null;

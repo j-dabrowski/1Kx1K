@@ -69,14 +69,15 @@ button.destructive:hover {
     background: #dc2626;
 }
 #coords {
-    position: absolute;
-    bottom: 0;
-    left: 0;
+    position: fixed;  /* Change from absolute to fixed */
+    bottom: 10px;    /* Add some padding from bottom */
+    left: 10px;      /* Add some padding from left */
     background: rgba(0,0,0,0.8);
     color: white;
     padding: 5px 10px;
     font-size: 14px;
-    border-radius: 0 4px 0 0;
+    border-radius: 4px;
+    z-index: 100;    /* Ensure it stays on top */
 }
 .image-upload-container {
     position: relative;

@@ -32,28 +32,38 @@ app.post('/api/save-image', (req, res) => {
 });
 
 app.post('/api/save-group', (req, res) => {
-  const { sessionId, userId, pixels, image } = req.body;
+  const { id, sessionId, userId, pixels, image } = req.body;
   const sessionFile = path.join(dataDir, `session_${sessionId}.json`);
   
   let groups = [];
   if (fs.existsSync(sessionFile)) {
       groups = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
-      // Update existing group if it exists
-      const existingGroupIndex = groups.findIndex(g => 
-          JSON.stringify([...g.pixels].sort()) === JSON.stringify([...pixels].sort())
-      );
       
-      if (existingGroupIndex !== -1) {
-          groups[existingGroupIndex] = { userId, pixels, image };
+      // First try to find by exact ID
+      let existingIndex = groups.findIndex(g => g.id === id);
+      
+      if (existingIndex !== -1) {
+          // Update existing group
+          groups[existingIndex] = { id, userId, pixels, image };
       } else {
-          groups.push({ userId, pixels, image });
+          // Add new group
+          groups.push({ id, userId, pixels, image });
       }
+
+      // Remove any duplicate groups
+      groups = groups.filter((group, index, self) =>
+          index === self.findIndex((g) => g.id === group.id)
+      );
   } else {
-      groups.push({ userId, pixels, image });
+      groups.push({ id, userId, pixels, image });
   }
   
+  // Sort by ID to maintain consistent order
+  groups.sort((a, b) => (a.id > b.id ? 1 : -1));
+  
+  // Save sorted, deduplicated groups
   fs.writeFileSync(sessionFile, JSON.stringify(groups, null, 2));
-  res.json({ success: true });
+  res.json({ success: true, id });
 });
 
 app.get('/api/load-groups', (req, res) => {
